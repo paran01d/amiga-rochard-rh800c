@@ -1,0 +1,61 @@
+GAL22V10
+UA6RH80B
+
+AB1 AB2 AB3 AB4 AB5 AB6 GALSTB RCFG8 RCFG4 RCFG2 BASEA GND
+RW CFGIN NC15 ACPHASE RST DB15 DB14 DB13 DB12 NC22 DRVEN VCC
+
+; =================================================================
+; UA6 - RocHard RH800C  rebuild  v2  (oscillation fix)
+; Change vs v1: /DRVEN now LATCHES on the stable /BASE_A access window
+; instead of a bare self-hold, to break the /DRVEN<->UA4 /_GALSTROBE
+; feedback loop that rang at ~MHz in the v1 VCD capture.
+; Model unchanged: /DRVEN master-enable + er_Type MEMLIST+SIZE override.
+; Fixed $200000 base -> no base latch.
+;
+; /BASEA (p11, from U12) = _AS delayed/synced -> "a bus access is in
+;   progress", and it does NOT depend on /DRVEN, so it is safe to hold on.
+; =================================================================
+
+
+; ---- /DRVEN : SET on the E8/RAM trigger, HOLD on /BASE_A ---------------
+; SET  : our turn (/CFGIN) & UA4 trigger (/GALSTB) & access active (/BASEA)
+;        -> requiring /BASEA in the SET delays assertion until the hold
+;           signal is ready, avoiding the start-of-cycle glitch.
+; HOLD : keep asserted for the rest of the access (/BASEA) regardless of
+;        /GALSTB bouncing -> this is what damps the oscillation.
+; Releases when /BASE_A deasserts (access ends) or on reset.
+/DRVEN = /CFGIN & /GALSTB & /BASEA & RST
+       + /CFGIN & /BASEA  & /DRVEN & RST
+
+
+; ---- er_Type nibble on DB12-15 (unchanged from v1) --------------------
+; hi nibble @0x00 (A1=0): 0xE = 1110 (D13=1 = MEMLIST)
+; lo nibble @0x02 (A1=1) = SIZE: 8M=000 4M=111 2M=110 on D14 D13 D12
+DB15.T = /AB1
+DB14.T = /AB1 + AB1 & /RCFG4 + AB1 & /RCFG2
+DB13.T = /AB1 + AB1 & /RCFG4 + AB1 & /RCFG2
+DB12.T =        AB1 & /RCFG4
+
+; drive only during OUR autoconfig READ of the er_Type register
+; (/GALSTB already implies "$E8 access AND RAM present")
+DB15.E = /CFGIN & /GALSTB & RW & RST & /AB2 & /AB3 & /AB4 & /AB5 & /AB6
+DB14.E = /CFGIN & /GALSTB & RW & RST & /AB2 & /AB3 & /AB4 & /AB5 & /AB6
+DB13.E = /CFGIN & /GALSTB & RW & RST & /AB2 & /AB3 & /AB4 & /AB5 & /AB6
+DB12.E = /CFGIN & /GALSTB & RW & RST & /AB2 & /AB3 & /AB4 & /AB5 & /AB6
+
+
+; ACPHASE (p16) unused by U11; NC15/NC22 unconnected pads; left undriven.
+
+DESCRIPTION
+
+UA6 rebuild v2 for RocHard RH800C.  Fixes the v1 /_DRVEN <-> UA4 feedback
+oscillation seen in the logic capture (both /_DRVEN and /_E8WIN rang at the
+12 MHz sample limit) by holding /DRVEN on the stable /BASE_A access window.
+
+WATCH ON TEST:
+ - /_DRVEN (UA6 p23) should now be a CLEAN low for the duration of each
+   E8 access, no chatter.
+ - /_E8WIN (UA4 p23) should follow cleanly.
+ - If /_DRVEN still rings -> /BASE_A timing is wrong or CFGIN is floating.
+ - FIRST verify UA6 p14 (/CFGIN) is actually DRIVEN (pulses low at boot);
+   a floating enable defeats any logic fix.

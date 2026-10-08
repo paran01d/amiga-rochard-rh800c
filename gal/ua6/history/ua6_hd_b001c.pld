@@ -1,0 +1,85 @@
+GAL22V10
+UA6R001C
+
+AB1 AB2 AB3 AB4 AB5 AB6 GALSTB RCFG8 RCFG4 RCFG2 BASEA GND
+RW CFGIN NC15 ACPHASE RST DB15 DB14 DB13 DB12 NC22 DRVEN VCC
+
+; =====================================================================
+; UA6 - RocHard RH800C  -  base latch -> (0,0,1)  [SCHEMATIC-CORRECTED]
+; ---------------------------------------------------------------------
+; ua6_hd + drive DB15 (p18) AND DB14 (p19) LOW during reset.
+; DB13 (p20) + DB12 (p21) Hi-Z.  /_DRVEN unchanged (working HD).
+;
+; ** SCHEMATIC CORRECTION 2026-08-01 (user, by continuity): UA4.16 (o16)
+;    is /_CFGD15 -> DB15, NOT /_CFGD12/DB12 as the KiCad net labelled it.
+;    So o16 is reached via DB15 = UA6 pin 18, not DB12/UA6 pin 21. **
+;
+; Target base latch (o16,o17,o18) = (0,0,1) arms UA4 /GALCLK1 line35 ONLY
+; = the 2M $200000 window (verified). Corrected pin map (o17/o18 proven
+; in-circuit; o16 corrected here):
+;   o16 (UA4.16) <- DB15 (UA6.18)   -> drive LOW to force o16=0
+;   o17 (UA4.17) <- DB14 (UA6.19)   -> drive LOW to force o17=0  [worked]
+;   o18 (UA4.18) <- DB13 (UA6.20)   -> leave Hi-Z, natural 1     [worked]
+;
+; ua6_hd_b001 wrongly drove DB12 (p21) for o16 -> o16 stayed 1 -> base
+; (1,0,1) -> window at $A0 (line39) -> yellow. This drives DB15 (p18).
+;
+; Mechanism (proven: db13 held o18=0, b001 held o17=0 whole boot): UA4's
+; oe (=/_DRVEN) is off during reset -> UA4 releases /_CFGDxx; UA6 driving
+; the DB line low then makes UA4 capture 0 at reset-release and hold it.
+; Controller er_Type ($D1) intact: ROM drives the $E8 read strong, the
+; series resistors decouple UA4's internal 0 from the bus the OS reads.
+;
+; BOARD: game II - DIP-1 ON - DIP-2 ON - JPA1 2M. SIMMs out for the
+;   clean-boot check, then in to look for region 00100 ($200000).
+; =====================================================================
+
+
+; ---- /_DRVEN (pin 23) : UNCHANGED working latched version -----------
+/DRVEN = /CFGIN & /BASEA & RST
+       + /CFGIN & /DRVEN & RST
+
+
+; ---- /_AC_PHASE (pin 16) : Hi-Z (unchanged) -------------------------
+ACPHASE.T = VCC
+ACPHASE.E = AB1 & /AB1
+
+
+; ---- DB13 (pin 20) + DB12 (pin 21) : Hi-Z ---------------------------
+; DB13 -> o18, left natural 1. DB12 -> not a UA4 latch bit; Hi-Z.
+DB13.T = VCC
+DB13.E = AB1 & /AB1
+DB12.T = VCC
+DB12.E = AB1 & /AB1
+
+; ---- DB15 (pin 18) + DB14 (pin 19) : drive LOW while RESET asserted --
+; DB15 -> o16 (UA4.16, CORRECTED), DB14 -> o17 (UA4.17).
+; .T tautological-false -> data 0 -> pin LOW. .E = /RST -> reset only.
+DB15.T = AB1 & /AB1
+DB15.E = /RST
+DB14.T = AB1 & /AB1
+DB14.E = /RST
+
+
+; ---- NC15 (pin 15), NC22 (pin 22) : Hi-Z (unchanged) ----------------
+NC15.T = VCC
+NC15.E = AB1 & /AB1
+NC22.T = VCC
+NC22.E = AB1 & /AB1
+
+
+DESCRIPTION
+
+UA6 HD build + base-latch->(0,0,1), schematic-corrected (UA4.16=DB15).
+
+Drives DB15 (p18) and DB14 (p19) LOW during reset so UA4 captures
+o16=0 and o17=0 (DB13/o18 natural 1). Base (0,0,1) arms UA4 /GALCLK1
+line35 = the 2M $200000 window only; disarms $F8/$D8/$A0 terms.
+Supersedes ua6_hd_b001, which drove DB12 (p21) for o16 - but UA4.16 is
+DB15 (p18), a KiCad net mislabel found by continuity. /_DRVEN unchanged.
+
+TEST (LA, roctec_ram_cfgd channel map):
+  1. RAM off: HD still boots.
+  2. RAM on, SIMMs out: boots CLEAN? base latch = 0,0,1? /_RAMCE /
+     /_GALSTROBE only at region 00100 ($200000), nowhere spurious?
+  3. RAM on, SIMMs in bank0: access at 00100 ($200000)?

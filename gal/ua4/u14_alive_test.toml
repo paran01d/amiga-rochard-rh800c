@@ -1,0 +1,91 @@
+## TL866II / xgpro logic-test vectors for U14 (GAL16V8)
+## Purpose: check if U14 survived being installed backwards in the socket.
+##
+## GAL16V8 pinout (20 pins):
+##   Pos:  1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20
+##   Sig: i1 i2 i3 i4 i5 i6 i7 i8 i9 GD i11 o12 o13 o14 o15 o16 o17 o18 o19 VC
+##                                                                          C
+##   Roctec net: CLK1 LDS UDS AB13 AB14 CFGAM AS LATCH R_W GND AB15
+##               SIMMWEL SIMMWEU IDE2CS0 ROMOE MUXA3 MUXA4 MUXA7 OVR VCC
+##
+## Vector chars:
+##   0/1 = drive LOW/HIGH input
+##   L/H = expect output LOW/HIGH
+##   Z   = expect Hi-Z
+##   X   = don't care
+##   G   = GND, V   = VCC
+##
+## Key equations from u14_equations.txt (all combinatorial):
+##   /o12 = /i1 & /i2 & /i7 & /i9                    (SIMMWEL)
+##   /o13 = /i1 & /i3 & /i7 & /i9                    (SIMMWEU)
+##   /o14 = /i4 & i5 & /i6 & /i7 & i11 + /i8 & /o14  (IDE2CS0, latching)
+##   /o15 = /i6 & /i7 & /i11 + /i8 & /o15            (ROMOE, latching)
+##   /o16 = i4 & /i5 & /i6 & /i7 & i11 + /i8 & /o16  (MUXA3, latching)
+##   /o17 = /i4 & /i5 & /i6 & /i7 & i11 + /i8 & /o17 (MUXA4, latching)
+##   /o18 = i4 & i5 & /i6 & /i7 & i11 + /i8 & /o18   (MUXA7, latching)
+##   o19 = <empty>, o19.oe = /i1                     (OVR, always drives 0 when enabled)
+##
+## Vectors here focus on the ALWAYS-PREDICTABLE outputs:
+##   - o12/o13 (SIMMWE): purely combinatorial, no history
+##   - o19 (/OVR): fixed value (LOW when /i1 asserted, else Hi-Z)
+##
+## Latch-dependent outputs (o14-o18) use X because their state depends on
+## power-up history. These vectors verify o12, o13, o19 which are enough
+## to detect a fried chip.
+
+[[ics]]
+name = "U14_Alive_Test"
+pins = 20
+vcc = 5.0
+vectors = [
+
+    ## --- /OVR (pin 19) TESTS ---
+    ## o19 has empty equation → always FALSE.
+    ## o19.oe = /i1 → drives when i1 (CLK1) is LOW.
+    ## Because output is Active-HIGH combinatorial, "always FALSE" means driving LOW.
+
+    # 1. i1 HIGH → pin 19 Hi-Z
+    "1XXXXXXXX0XZZZZZZZZV",
+
+    # 2. i1 LOW → pin 19 drives LOW
+    "0XXXXXXXX0XZZZZZZZLV",
+
+
+    ## --- /SIMMWEL (pin 12) TESTS ---
+    ## /o12 = /i1 & /i2 & /i7 & /i9
+    ## Pin 12 goes LOW only when i1=0 AND i2=0 AND i7=0 AND i9=0.
+
+    # 3. All 4 conditions met → pin 12 LOW (SIMMWEL asserted)
+    "00XXXX0X0XXLZZZZZZLV",
+
+    # 4. i1 HIGH → pin 12 HIGH (condition fails on i1)
+    "10XXXX0X0XXHZZZZZZZV",
+
+    # 5. i2 HIGH → pin 12 HIGH (condition fails on i2)
+    "01XXXX0X0XXHZZZZZZLV",
+
+    # 6. i7 HIGH → pin 12 HIGH (condition fails on i7)
+    "00XXXX1X0XXHZZZZZZLV",
+
+    # 7. i9 HIGH → pin 12 HIGH (condition fails on i9)
+    "00XXXX0X1XXHZZZZZZLV",
+
+
+    ## --- /SIMMWEU (pin 13) TESTS ---
+    ## /o13 = /i1 & /i3 & /i7 & /i9
+    ## Same pattern as /o12 but uses i3 (UDS) instead of i2 (LDS).
+
+    # 8. All conditions met → pin 13 LOW (SIMMWEU asserted)
+    "0X0XXX0X0XXZLZZZZZLV",
+
+    # 9. i3 HIGH → pin 13 HIGH
+    "0X1XXX0X0XXZHZZZZZLV",
+
+
+    ## --- Cross-check: LDS asserts SIMMWEL but not SIMMWEU ---
+    # 10. i2=0, i3=1 (only LDS asserted) → SIMMWEL LOW, SIMMWEU HIGH
+    "001XXX0X0XXLHZZZZZLV",
+
+    # 11. i2=1, i3=0 (only UDS asserted) → SIMMWEL HIGH, SIMMWEU LOW
+    "010XXX0X0XXHLZZZZZLV",
+]

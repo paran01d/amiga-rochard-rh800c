@@ -1,0 +1,195 @@
+GAL22V10
+UA3BREB5
+
+AB17 AB18 AB19 AB20 AB22 AB23 CCK CCKQ CDAC GALCLK NC11 GND
+AB21 UA3SEL UA3B1 UA3B2 UA3B3 UA3B4 UA3B5 UA3B6 UA3B7 UA3B8 MUXEN VCC
+
+; =====================================================================
+; UA3b REBUILD  -  RocHard RH800C DRAM controller (daughterboard GAL)
+; ---------------------------------------------------------------------
+; Replaces the original UA3b, which is FAULTY: its access path is gated
+; on AB17, so only addresses with A17=1 ever produce a DRAM cycle. Half
+; the fast RAM is unreachable and any A17=0 access hangs the CPU (no
+; _UA3SEL -> U11 pin18 never enables -> no DTACK). Proven off-board on a
+; TL866 and uniform across all four banks. The original is read-protected
+; (galduino + poti sweep failed), so this is reconstructed from measured
+; behaviour, not copied.
+;
+; PIN MAP (kicad-cli netlist):
+;   1 AB17   2 AB18   3 AB19   4 AB20   5 AB22   6 AB23
+;   7 CCK    8 CCKQ   9 CDAC  10 GALCLK 11 GND(input, tied low) 12 GND
+;  13 AB21
+;  14 UA3SEL -> U11 pin17 (the sole enable for U11's DTACK driver)
+;  15 UA3B1 -> UA3a(74LS244) -> _RAMCAS3   (SIMM6/7)
+;  16 UA3B2 -> _RAMCAS2                     (SIMM4/5)
+;  17 UA3B3 -> _RAMCAS1                     (SIMM2/3)
+;  18 UA3B4 -> _RAMCAS0                     (SIMM0/1)
+;  19 UA3B5 -> _RAMRAS                      (all SIMMs)
+;  20 UA3B6 -> SIMMA9
+;  21 UA3B7 -> SIMMA8
+;  22 UA3B8 -> UA1/UA2 (74LS158) row/column SELECT
+;  23 MUXEN -> /G ENABLE on UA1 AND UA2 (74LS158 address muxes).
+;              *** The schematic shows pin 23 going nowhere (only UA3.23);
+;              the UA1/UA2 connection is NOT DRAWN. Traced by the user
+;              2026-08-15. Rev 1-3 used this pin as an internal state bit,
+;              which held /G HIGH and forced the '158 outputs high, so
+;              SIMMA0-A7 never varied: every address in a 128 KB block
+;              aliased to one cell. SIMMA8/9 come straight from UA3b and
+;              bypass the muxes, which is why A17 still had an effect. ***
+;  24 VCC
+;
+; NOTE ON PIN 1: on a GAL22V10 pin 1 is the dedicated clock for REGISTERED
+; macrocells. Here it carries AB17, so this design uses COMBINATORIAL
+; macrocells ONLY, with self-holding feedback latches for state - the same
+; construct the original uses (and the same one seen in UA4 o16/o17/o18
+; and U11 o20/o21). No registered outputs anywhere in this file.
+;
+; ---------------------------------------------------------------------
+; MEASURED (high confidence - from LA captures on the real card)
+;   SIMMA8 = row: /AB18   column: /AB17     (row 8/8; column derived by
+;   SIMMA9 = row: /AB20   column: /AB19      the pairing rule, 8/8)
+;   bank = (AB23,AB22,AB21) - 1 :
+;        001 -> CAS0   010 -> CAS1   011 -> CAS2   100 -> CAS3
+;   access window (GALCLK low)  ~640 ns
+;   mux to column  +80 ns, back to row +440 ns
+;   _UA3SEL asserts +400 ns, releases +640 ns
+;   CAS low pulse ~100 ns, RAS low pulse ~280-300 ns
+;
+; DESIGNED (not copied - the original's exact scheme is not recoverable)
+;   the refresh cadence, and the RAS/CAS sequencing inside the access
+;   window. Refresh in the original is burst-structured (~280 ns pulses
+;   in bursts every ~2 us) and interleaves with accesses, so it could not
+;   be separated from the captures. Any CBR scheme meeting the DRAM
+;   retention spec is valid, so this uses a simple one.
+; =====================================================================
+
+
+; ---- access in progress ---------------------------------------------
+; GALCLK (pin 10) is low for the whole access window. UA4 has already
+; qualified the address region, so no address decode is needed here to
+; decide *whether* to run a cycle - only *which bank*.
+; ** THE FIX: nothing below gates on AB17. AB17 is used ONLY as a
+;    multiplexed address bit for SIMMA8, which is what it is for. **
+
+
+; ---- sequencer -------------------------------------------------------
+; Three self-holding latches paced by CDAC (7.16 MHz, 140 ns), each
+; advancing on the next CDAC half-period, all cleared when GALCLK rises:
+;   UA3B8 low  = column phase   (~+70 ns)
+;   SEQ23      = CAS phase      (~+140 ns)
+;   UA3SEL low = DTACK          (~+210 ns)
+; Earlier than the original's +400 ns, which is safe: DTACK may arrive
+; early, the CPU simply inserts no wait states. TUNING POINT - if the
+; card is unstable, delay UA3SEL by qualifying it with CCK instead.
+
+; *** REV 4 FIX: pin 23 is the UA1/UA2 mux ENABLE, not a spare. ***
+; It drives /G on both 74LS158s. /G high forces their outputs high, so
+; rev 1-3 disabled the address muxes for most of every access and all of
+; SIMMA0-A7 sat static -- reads across $200000-$21FFFE all returned the
+; same cell, changing only at A17 (which reaches the SIMMs via SIMMA8,
+; direct from UA3b, bypassing the muxes).
+;
+; Conveniently the enable and the precharge flag want identical timing:
+; asserted shortly after the access begins and held to the end. So MUXEN
+; serves both - it enables the muxes AND gates RAS, which keeps the rev 3
+; guarantee that RAS is high at the start of every access (MUXEN cannot
+; be low while GALCLK is high, so a refresh in progress cannot carry a
+; low RAS into an access).
+; The muxes being disabled for the first ~70 ns is harmless: RAS has not
+; fallen yet, so no row address is latched. During refresh (GALCLK high)
+; they stay disabled, which is fine - CBR ignores the address.
+
+; MUXEN (pin 23 -> /G on UA1 and UA2): LOW = muxes enabled.
+/MUXEN.T = /GALCLK & /CDAC
+         + /GALCLK & /MUXEN
+MUXEN.E  = VCC
+
+; UA3B5 (pin 19 -> _RAMRAS) stage 1. NO self-hold: gated purely on MUXEN,
+; which is guaranteed HIGH whenever GALCLK is high.
+/UA3B5.T = /GALCLK & /MUXEN
+         + GALCLK & /CCK & /CDAC
+UA3B5.E  = VCC
+
+; UA3B8 (pin 22) stage 2: HIGH = row, LOW = column. One CDAC phase after
+; RAS, so the row address is held past the RAS falling edge.
+/UA3B8.T = /GALCLK & /UA3B5 & CDAC
+         + /GALCLK & /UA3B8
+UA3B8.E  = VCC
+
+; UA3SEL (pin 14) stage 4: DTACK to U11.
+; *** REV 5 FIX: rev 4 asserted DTACK on the SAME CDAC edge as CAS, so the
+; CPU was told the cycle was complete at the instant CAS fell - zero margin
+; for tCAC (~25 ns) plus the U2 '245 buffer delay (~12 ns). The first cycle
+; of a move.l survived it; the second, beginning at a different CDAC phase,
+; returned garbage. Now DTACK waits one further CDAC phase AFTER CAS is
+; actually asserted, giving ~70 ns of data-valid margin.
+; Keyed off the CAS outputs' own feedback (only one bank is ever low), so
+; it needs no extra macrocell - pin 23 is the mux enable and cannot be
+; borrowed for state.
+/UA3SEL.T = /GALCLK & /UA3B4 & CDAC
+          + /GALCLK & /UA3B3 & CDAC
+          + /GALCLK & /UA3B2 & CDAC
+          + /GALCLK & /UA3B1 & CDAC
+          + /GALCLK & /UA3SEL
+UA3SEL.E  = VCC
+
+
+; ---- SIMM row/column address (MEASURED - do not change) --------------
+; Pin drives the INVERSE of the selected address bit; UA1/UA2 (74LS158)
+; are inverting too, so the whole SIMM address bus is inverted.
+;   UA3B8 high (row)    -> SIMMA8 = /AB18 , SIMMA9 = /AB20
+;   UA3B8 low  (column) -> SIMMA8 = /AB17 , SIMMA9 = /AB19
+/UA3B7.T = UA3B8 & AB18
+         + /UA3B8 & AB17
+UA3B7.E  = VCC
+
+/UA3B6.T = UA3B8 & AB20
+         + /UA3B8 & AB19
+UA3B6.E  = VCC
+
+
+; ---- RAS is defined above as sequencer stage 1 -----------------------
+
+
+; ---- CAS per bank (pins 18/17/16/15 -> _RAMCAS0..3) ------------------
+; Access: only the addressed bank, during the CAS phase.
+;   bank = (AB23,AB22,AB21) - 1
+; Refresh: ALL FOUR assert together (CBR refreshes every bank at once -
+; this matches the measured ~6.2% duty seen on all four lines).
+/UA3B4.T = /GALCLK & /UA3B8 & /CDAC & /AB23 & /AB22 &  AB21
+         + /GALCLK & /UA3B4 & /AB23 & /AB22 &  AB21
+         + GALCLK & /CCK
+UA3B4.E  = VCC
+
+/UA3B3.T = /GALCLK & /UA3B8 & /CDAC & /AB23 &  AB22 & /AB21
+         + /GALCLK & /UA3B3 & /AB23 &  AB22 & /AB21
+         + GALCLK & /CCK
+UA3B3.E  = VCC
+
+/UA3B2.T = /GALCLK & /UA3B8 & /CDAC & /AB23 &  AB22 &  AB21
+         + /GALCLK & /UA3B2 & /AB23 &  AB22 &  AB21
+         + GALCLK & /CCK
+UA3B2.E  = VCC
+
+/UA3B1.T = /GALCLK & /UA3B8 & /CDAC &  AB23 & /AB22 & /AB21
+         + /GALCLK & /UA3B1 &  AB23 & /AB22 & /AB21
+         + GALCLK & /CCK
+UA3B1.E  = VCC
+
+
+DESCRIPTION
+
+UA3b rebuild for the RocHard RH800C fast-RAM controller.
+
+The original UA3b gates its entire access path on AB17: with A17=0 it
+produces no mux, no RAS, no CAS and no _UA3SEL, so the CPU never gets
+DTACK and hangs. Alternating 128 KB blocks work and the rest are dead.
+This rebuild uses AB17 only where it belongs - as a multiplexed column
+address bit for SIMMA8 - so every address in the window runs a cycle.
+
+Reconstructed from logic-analyser captures rather than a fusemap dump;
+the original is read-protected. The SIMM address multiplexing and the
+bank/CAS decode are measured and should be treated as fixed. The refresh
+scheme and the intra-cycle RAS/CAS sequencing are designed to meet DRAM
+timing, not copied, and are the parts to revisit first if the card
+misbehaves.

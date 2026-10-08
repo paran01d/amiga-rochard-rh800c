@@ -1,0 +1,82 @@
+GAL22V10
+RoctecUA4
+
+
+AB16 AB17 AB18 AB19 AB20 AB21 AB22 AB23 STRAP0 STRAP1 STRAP2 GND
+/EN  NC   /AS  DBX  DB14 DBY   CLK1 BANK STRB DLY  NC     VCC
+
+
+; ============================================================
+;   UA4 GAL22V10 - Draft 05 (restored as known-safe baseline)
+; ============================================================
+;
+;   This is the "broken-chip emulator" we confirmed boots the
+;   Amiga cleanly (card invisible to autoconfig). All UA4
+;   outputs are at safe defaults:
+;
+;     CLK1 - constant HIGH (no edges to U14)
+;     STRB - constant HIGH (no edges to U12 / UA6)
+;     DLY  - constant HIGH (C1 charges to VCC)
+;     DB14 - permanent Hi-Z
+;     DBX  - permanent Hi-Z (no R11 / UA6 contention)
+;     DBY  - permanent Hi-Z (no R15 / UA6 contention)
+;
+;   /AS and BANK inputs referenced via tautological
+;   contradictions in DBX.E and DBY.E so GALasm marks pins 15
+;   and 20 as INPUT, not NC.
+;
+;   What we learned during Draft 06-08 attempts (and why we
+;   reverted to Draft 05):
+;
+;     - Draft 06 (CLK1 active LOW pulse on $E8+/AS): /OVR
+;       asserts during $E8 reads but no /DTACK comes back -
+;       CPU stalls forever waiting for the cycle to complete.
+;       /AS stays LOW, our CLK1 stays LOW as a consequence,
+;       /OVR stays LOW because U14 never gets a release edge.
+;
+;     - Draft 07 (+ STRB active LOW pulse): U12 evolves under
+;       STRB=LOW into a steady state where its IO7 output goes
+;       LOW and stays LOW. That's U11's CLK input - now stuck.
+;       U11 never advances state, never asserts /DTACK. Same
+;       hang at grey screen.
+;
+;     - Draft 08 (STRB polarity inverted, active HIGH): worse
+;       than Draft 07 - red screen now, meaning U12/U11/UA6
+;       cascade lands in a state that disrupts the chipset.
+;
+;   Conclusion: without the actual fuse maps of U11, U12, UA6
+;   (and ideally U14) we cannot predict what UA4 outputs need
+;   to look like for the cascade to come up correctly. The
+;   Galdurino-based fuse dump is now the prerequisite next
+;   step. Once we have U11/U12/UA6/U14 equations, this draft
+;   gets replaced with one that actually drives the autoconfig
+;   handshake properly.
+; ============================================================
+
+
+; --- Always-driven HIGH outputs (no tri-state) ---
+CLK1 = VCC
+STRB = VCC
+DLY  = VCC
+
+
+; --- Always-Hi-Z outputs (tri-state with enable forced FALSE) ---
+;     Contradictions in .E force AS and BANK to INPUT mode.
+DB14.T = VCC
+DB14.E = AB16 * /AB16
+
+DBX.T = VCC
+DBX.E = AS * /AS
+
+DBY.T = VCC
+DBY.E = BANK * /BANK
+
+
+DESCRIPTION
+
+UA4 GAL22V10 Draft 05 (restored): "broken-chip emulator".
+Confirmed safe baseline - boots the Amiga, card invisible.
+Drafts 06-08 attempts to enable real behavior failed because
+we don't know the U11 / U12 / UA6 / U14 fuse maps. Next step
+is Galdurino fuse dumps; this draft is the known-good
+checkpoint to come back to.

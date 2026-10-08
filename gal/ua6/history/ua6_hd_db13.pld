@@ -1,0 +1,92 @@
+GAL22V10
+UA6RHD13
+
+AB1 AB2 AB3 AB4 AB5 AB6 GALSTB RCFG8 RCFG4 RCFG2 BASEA GND
+RW CFGIN NC15 ACPHASE RST DB15 DB14 DB13 DB12 NC22 DRVEN VCC
+
+; =====================================================================
+; UA6 - RocHard RH800C  -  ua6_hd + DB13-LOW-DURING-RESET  (RAM bring-up)
+; ---------------------------------------------------------------------
+; IDENTICAL to ua6_hd.pld (the WORKING HD build, ORIGINAL latched /_DRVEN)
+; EXCEPT DB13 (pin 20) is driven LOW while reset is asserted.
+;
+; WHY (LA-confirmed 2026-08-01):
+;   Strap-on red/yellow screen = /_RAMCE fires at $F8 (Kickstart ROM) ->
+;   U2 fights the motherboard ROM on D8-15 -> crash. It fires because
+;   UA4's /GALCLK1 region-7 term (o19 line37) is ARMED, and that term
+;   needs UA4's base latch o16 & o17 & o18 = 1,1,1.
+;   LA proved o16.o17.o18 = 1,1,1 at the $F8 fire.
+;
+;   The crash is the FIRST Kickstart $F8 fetch - BEFORE autoconfig - so
+;   the base latch is 111 simply because UA4's self-hold latches
+;   (o16=o16, oe=/_DRVEN) SETTLE to 111 at reset-release (bus idle-high).
+;   Capturing a base later (ua6_hd_wr write-release) was too late AND
+;   destabilised autoconfig -> reverted.
+;
+; THE FIX UNDER TEST: force o18=0 from RESET.  UA4's oe (=/_DRVEN) is OFF
+;   during reset, so UA4 releases /_CFGD13; if UA6 drives DB13 LOW then,
+;   /_CFGD13 goes low through R15(32.7R), UA4's o18 feedback tracks 0, and
+;   when /_DRVEN asserts at reset-release UA4 holds o18=0 -> line37
+;   disarmed -> NO $F8 fire.  DB13 chosen because the controller er_Type
+;   ($D1) already has DB13=0, so this does NOT fight the HD identity
+;   (forcing DB12 or DB14, which are 1 in $D1, would).
+;
+;   /_DRVEN is UNCHANGED from ua6_hd (the working latched version), so HD
+;   autoconfig should be unaffected.
+;
+; RISK / NEXT: if o18 drifts back to 1 in the gap between reset-release and
+;   the first /_DRVEN assertion, widen DB13.E to also cover "/_DRVEN
+;   deasserted" (drive DB13 low the whole oe-off window). Watch CFGD13 on
+;   the LA to see if it sticks at 0.
+;
+; BOARD: game II - DIP-1 ON - DIP-2 ON - JPA1 2M - SIMMs out for 1st check.
+; =====================================================================
+
+
+; ---- /_DRVEN (pin 23) : UNCHANGED, working latched version -----------
+/DRVEN = /CFGIN & /BASEA & RST
+       + /CFGIN & /DRVEN & RST
+
+
+; ---- /_AC_PHASE (pin 16) : Hi-Z (unchanged) -------------------------
+ACPHASE.T = VCC
+ACPHASE.E = AB1 & /AB1
+
+
+; ---- DB12/14/15 : Hi-Z (unchanged) ----------------------------------
+DB15.T = VCC
+DB15.E = AB1 & /AB1
+DB14.T = VCC
+DB14.E = AB1 & /AB1
+DB12.T = VCC
+DB12.E = AB1 & /AB1
+
+; ---- DB13 (pin 20) : drive LOW while RESET asserted -----------------
+; .T = tautological FALSE -> output data = 0 (LOW).  DB13 is active-high
+; in the declaration (no slash), so data 0 -> pin LOW.
+; .E = /RST -> enabled only while reset asserted (RST pin low); Hi-Z after.
+DB13.T = AB1 & /AB1
+DB13.E = /RST
+
+
+; ---- NC15 (pin 15), NC22 (pin 22) : Hi-Z (unchanged) ----------------
+NC15.T = VCC
+NC15.E = AB1 & /AB1
+NC22.T = VCC
+NC22.E = AB1 & /AB1
+
+
+DESCRIPTION
+
+UA6 HD build + DB13-low-during-reset for RocHard RH800C RAM bring-up.
+
+Same as ua6_hd.pld (working HD, latched /_DRVEN, DB/ACPHASE Hi-Z) except
+DB13 (pin 20) is driven LOW while reset is asserted. Goal: bias UA4's
+o18 (/_CFGD13) base-latch bit to 0 at reset-release so /GALCLK1's region-7
+term (needs o16.o17.o18=111) never arms -> /_GALSTROBE / /_RAMCE stop
+firing at $F8 (Kickstart), which was the strap-on crash.
+
+TEST (LA, roctec_ram_cfgd channel map):
+  1. HD still enumerates / boots with RAM off? (must - /_DRVEN unchanged)
+  2. Strap ON: does CFGD13 read 0 (not 1)? does base leave 111?
+  3. Strap ON: does /_RAMCE STILL fire at region 1111 ($F8)? Must NOT.

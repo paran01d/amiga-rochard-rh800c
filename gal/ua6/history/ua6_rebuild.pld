@@ -1,0 +1,87 @@
+GAL22V10
+UA6RH800
+
+AB1 AB2 AB3 AB4 AB5 AB6 GALSTB RCFG8 RCFG4 RCFG2 BASEA GND
+RW CFGIN NC15 ACPHASE RST DB15 DB14 DB13 DB12 NC22 DRVEN VCC
+
+; =================================================================
+; UA6 - RocHard RH800C  (first-principles rebuild)
+; Model: "er_Type override + /_DRVEN enable"  (see ua6-rebuild-spec)
+; Memory base is FIXED $200000 (per card docs) -> NO base latch here.
+;
+; UA6 does exactly two jobs:
+;   1) /DRVEN  - master autoconfig enable for UA4 (without it UA4 cannot
+;                produce /_E8WIN or drive config data -> NO autoconfig).
+;   2) Override the single board's er_Type MEMLIST+SIZE bits on DB12-15,
+;      from the RAM straps: ROM's static 0xC0 (controller, no memory) ->
+;      0xE0 / 0xE7 / 0xE6 (controller + 8/4/2 MB memory) when RAM fitted.
+;   The ROM supplies every OTHER autoconfig register (mfr 2144, product..).
+;
+; Signal senses (net level):
+;   /GALSTB (p7, from UA4 o21) = LOW when "$E8 autoconfig access AND a RAM
+;       strap is set" -> already means RAM-present, so it also gates size.
+;   /CFGIN  (p14) = LOW = our turn in the autoconfig chain
+;   /RST    (p17) = LOW = system reset ; RST (high) = not-reset
+;   /RCFG8/4/2 (p8/9/10) = LOW = that size selected (one at a time)
+;   RW (p13) = 1 read / 0 write ;  AB1..AB6 = config-space offset A1..A6
+; =================================================================
+
+
+; ---- /DRVEN : enable UA4's autoconfig drivers during our access --------
+; Assert (LOW) on our turn + autoconfig access (/GALSTB) + not reset,
+; with a self-hold so it survives the UA4 /_GALSTROBE <-> /DRVEN handshake.
+; BENCH TODO: confirm hold-vs-pulse timing of this handshake on real HW.
+/DRVEN = /CFGIN & /GALSTB & RST
+       + /CFGIN & /DRVEN  & RST
+
+
+; ---- er_Type nibble on DB12-15 (only driven during our er_Type read) ---
+; er_Type hi nibble @0x00 (A1=0): 0xE = 1110 -> D15=1 D14=1 D13=1 D12=0
+;                                             (D13=1 sets ERTF_MEMLIST)
+; er_Type lo nibble @0x02 (A1=1) = SIZE code on D14 D13 D12:
+;     8MB=000  4MB=111  2MB=110      (D15=0 in lo nibble)
+;   DB12 = 1 only for 4MB              (RCFG4 asserted)
+;   DB13 = DB14 = 1 for hi-nibble(memlist) OR lo-nibble 4MB/2MB
+DB15.T = /AB1
+DB14.T = /AB1 + AB1 & /RCFG4 + AB1 & /RCFG2
+DB13.T = /AB1 + AB1 & /RCFG4 + AB1 & /RCFG2
+DB12.T =        AB1 & /RCFG4
+
+; Tri-state enable (single product term): drive only when it is OUR
+; autoconfig READ of the er_Type register.  /GALSTB already implies
+; "$E8 access AND RAM present", so no-RAM => /GALSTB idle => Hi-Z =>
+; er_Type stays the ROM's 0xC0 (memlist clear => no memory added).
+; er_Type register = offset 0x00/0x02 => A2..A6 = 0.
+DB15.E = /CFGIN & /GALSTB & RW & RST & /AB2 & /AB3 & /AB4 & /AB5 & /AB6
+DB14.E = /CFGIN & /GALSTB & RW & RST & /AB2 & /AB3 & /AB4 & /AB5 & /AB6
+DB13.E = /CFGIN & /GALSTB & RW & RST & /AB2 & /AB3 & /AB4 & /AB5 & /AB6
+DB12.E = /CFGIN & /GALSTB & RW & RST & /AB2 & /AB3 & /AB4 & /AB5 & /AB6
+
+
+; ---- ACPHASE (p16 -> U11 p5) : unused by U11's crack; left undriven ----
+; NC15 (p15), NC22 (p22): unconnected pads on the PCB; left undriven.
+
+
+DESCRIPTION
+
+UA6 rebuild for RocHard RH800C, derived from the Zorro II autoconfig spec +
+WinUAE + the neighbour GAL equations (the original UA6 could not be read).
+
+WHAT IT DOES
+  - /DRVEN gates UA4's autoconfig response (master enable).
+  - Overrides er_Type MEMLIST + SIZE from the RAMCFG straps so the OS adds
+    2/4/8 MB of fast RAM at the fixed $200000 base. No RAM strap => no drive
+    => board reports as controller-only (matches WinUAE's static ROM view).
+
+KNOWN OPEN ITEMS (resolve on the bench, this is a FIRST test burn)
+  1. Bus arbitration: this assumes the ROM is NOT driving DB12-15 during $E8
+     autoconfig reads (so UA6 owns er_Type). If the ROM does drive there,
+     expect contention on D13/size bits -> re-gate or disable ROM in $E8.
+  2. /GALSTB <-> /DRVEN async handshake: verify the self-hold behaves
+     (no chatter, releases correctly). Scope UA6 p23 during boot autoconfig.
+  3. /_AC_PHASE (p16) left undriven - confirm nothing on the card needs it.
+  4. Strap polarity assumed active-low (/RCFG*), one selected at a time,
+     per UA4's equations.
+
+TEST: burn, install with the other ORIGINAL chips, boot the Amiga, check the
+memory list / 'avail' for the 2/4/8 MB and whether the card now autoconfigs.

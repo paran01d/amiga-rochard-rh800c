@@ -1,0 +1,22 @@
+# build products
+*.fus
+*.chp
+*.pin
+__pycache__/
+*.pyc
+# KiCad per-user/transient state
+*.kicad_prl
+*-backups/
+_autosave-*
+\#auto_saved_files\#
+~*.lck
+*.kicad_sch-bak
+# local work files of the Galdurino tools
+galdurino-tools/crack_attempts/
+galdurino-tools/overnight_dumps/
+galdurino-tools/overnight.log
+# never commit copyrighted images by accident
+*.rom
+u6_even.bin
+u20_odd.bin
+kick*.A500

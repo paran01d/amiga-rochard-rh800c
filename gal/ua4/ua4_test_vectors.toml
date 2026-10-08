@@ -1,0 +1,108 @@
+## TL866II / XGpro test vectors for UA4 (Draft 03 JED)
+##
+## Validates that the GAL22V10 burned with ua4.jed behaves as designed.
+## Run this BEFORE installing the replacement chip in the card.
+##
+## Pinout (matches ua4.pld pin layout, matches schematic):
+##   Pos: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24
+##   Pin: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24
+##   Sig: A A A A A A A A S S  S  G  /  N  /  D  D  D  /  B  /  D  N  V
+##        B B B B B B B B T T  T  N  E  C  A  B  B  B  C  A  S  L  C  C
+##        1 1 1 1 2 2 2 2 R R  R  D  N     S  X  1  Y  L  N  T  Y  C
+##        6 7 8 9 0 1 2 3 A A  A           E     4     K  K  R
+##                        P P  P                       1     B
+##                        0 1  2
+##
+## Vector chars:
+##   0/1 = drive input LOW/HIGH
+##   L/H = expect output LOW/HIGH
+##   Z   = expect Hi-Z (tri-state)
+##   X   = don't care
+##   G   = GND pin
+##   V   = VCC pin
+##
+## $E8 = AB23..AB16 = 1110_1000:
+##   AB16=0 AB17=0 AB18=0 AB19=1 AB20=0 AB21=1 AB22=1 AB23=1
+##   (i.e. positions 1..8 of vector = "00010111")
+##
+## STRAP0/1/2 (pins 9/10/11): always driven HIGH (mirror board pullup).
+## NC pins (14, 23): always X.
+
+[[ics]]
+name = "RocTecUA4_D03"
+pins = 24
+vcc = 5.0
+vectors = [
+
+    ## --- Group A: card enabled, /AS asserted, $E8 window ---
+
+    # 1. $E8 read, BANK=1 → DB14/DBX HIGH, DBY HIGH, /CLK1 LOW, /STRB LOW, DLY HIGH
+    "00010111111G0X0HHHL1LHXV",
+
+    # 2. Same as 1 but BANK=0 → DBY LOW
+    "00010111111G0X0HHLL0LHXV",
+
+
+    ## --- Group B: card enabled, /AS deasserted ($E8 still on bus) ---
+
+    # 3. /AS HIGH: data outputs Hi-Z, clocks idle HIGH
+    "00010111111G0X1ZZZH1HHXV",
+
+
+    ## --- Group C: card enabled, /AS asserted, NOT in $E8 window ---
+
+    # 4. $00 (all addr 0): outside window, data Hi-Z, clocks idle
+    "00000000111G0X0ZZZH1HHXV",
+
+    # 5. $FF (all addr 1): outside window
+    "11111111111G0X0ZZZH1HHXV",
+
+    # 6. $7F: outside window
+    "11111110111G0X0ZZZH1HHXV",
+
+
+    ## --- Group D: per-bit address-decode verification ---
+    ## Each toggles ONE bit of $E8 to verify all 8 address bits
+    ## participate in the decode. All should fail to decode → Hi-Z.
+
+    # 7.  $E9 (AB16 = 1, should be 0)
+    "10010111111G0X0ZZZH1HHXV",
+    # 8.  $EA (AB17 = 1, should be 0)
+    "01010111111G0X0ZZZH1HHXV",
+    # 9.  $EC (AB18 = 1, should be 0)
+    "00110111111G0X0ZZZH1HHXV",
+    # 10. $E0 (AB19 = 0, should be 1)
+    "00000111111G0X0ZZZH1HHXV",
+    # 11. $F8 (AB20 = 1, should be 0)
+    "00011111111G0X0ZZZH1HHXV",
+    # 12. $C8 (AB21 = 0, should be 1)
+    "00010011111G0X0ZZZH1HHXV",
+    # 13. $A8 (AB22 = 0, should be 1)
+    "00010101111G0X0ZZZH1HHXV",
+    # 14. $68 (AB23 = 0, should be 1)
+    "00010110111G0X0ZZZH1HHXV",
+
+
+    ## --- Group E: card disabled (/EN HIGH) ---
+
+    # 15. $E8 + /AS asserted but card DISABLED → ALL outputs Hi-Z
+    "00010111111G1X0ZZZZ1ZZXV",
+
+    # 16. Same but BANK=0 — still all Hi-Z (BANK doesn't enable anything)
+    "00010111111G1X0ZZZZ0ZZXV",
+
+
+    ## --- Group F: straps should NOT affect outputs (draft uses them as no-op) ---
+
+    # 17. $E8 read, BANK=1, but STRAP0=0 (overriding pullup) → same as vector 1
+    "00010111011G0X0HHHL1LHXV",
+
+    # 18. $E8 read, BANK=1, STRAP1=0 → same as vector 1
+    "00010111101G0X0HHHL1LHXV",
+
+    # 19. $E8 read, BANK=1, STRAP2=0 → same as vector 1
+    "00010111110G0X0HHHL1LHXV",
+
+    # 20. All straps 0 → same as vector 1
+    "00010111000G0X0HHHL1LHXV",
+]

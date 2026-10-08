@@ -1,0 +1,97 @@
+GAL22V10
+UA6RH001
+
+AB1 AB2 AB3 AB4 AB5 AB6 GALSTB RCFG8 RCFG4 RCFG2 BASEA GND
+RW CFGIN NC15 ACPHASE RST DB15 DB14 DB13 DB12 NC22 DRVEN VCC
+
+; =====================================================================
+; UA6 - RocHard RH800C  -  ua6_hd + base latch -> (0,0,1)  (RAM bring-up)
+; ---------------------------------------------------------------------
+; IDENTICAL to ua6_hd.pld (working HD, latched /_DRVEN) EXCEPT DB12 (p21)
+; AND DB14 (p19) are driven LOW while reset is asserted. DB13 (p20) is
+; left Hi-Z (natural 1).  Target base latch (o16,o17,o18)=(0,0,1) =
+; (CFGD12,CFGD14,CFGD13)=(0,0,1).
+;
+; WHY (LA-derived + confirmed 2026-08-01):
+;   The strap-on crash = UA4's /GALCLK1 (o19) arms a wrong-region term ->
+;   /_GALSTROBE -> /_RAMCE -> U2 fights the bus at that region -> crash.
+;   Which term arms depends ENTIRELY on the base latch o16/o17/o18:
+;     base 111 -> line37 -> region 7 ($F8 Kickstart)   [orig red screen]
+;     base 110 -> line36 -> $C0-$DF ($D8 CIA)          [ua6_hd_db13 yellow]
+;     base 001 -> line35 -> $200000 (the 2M RAM window) [CORRECT]
+;   Verified base=(0,0,1)+2M strap arms line35 ONLY (all 15 o19 terms
+;   checked) -> /_GALSTROBE fires ONLY at $200000, nowhere spurious.
+;
+;   For 2M @ $200000, line35 = i6 & /i7 & /i8 (A21=1,A22=0,A23=0) &
+;   i9 & i10 & /i11 (2M strap) & /o16 & /o17 & o18  => need o16=0, o17=0,
+;   o18=1.  ua6_hd_db13 wrongly forced o18=0 (-> 110 -> $D8). This forces
+;   o16=0 (DB12) + o17=0 (DB14) and leaves o18=1 (DB13 natural).
+;
+;   Mechanism (proven by ua6_hd_db13: CFGD13 held 0 all boot): UA4's
+;   o16/o17/o18 latches release when /_DRVEN is high (reset); driving the
+;   DB line low then makes UA4 capture 0 at reset-release and hold it.
+;   Controller er_Type ($D1: DB12=1,DB14=1) stays correct because the ROM
+;   drives DB12/DB14 strong during the $E8 read - the 32.7R resistors
+;   decouple UA4's internal 0 from the bus the OS reads.
+;
+;   /_DRVEN UNCHANGED from ua6_hd -> HD autoconfig unaffected.
+;
+; NOTE: this points the RAM WINDOW at $200000; it does NOT yet make the OS
+;   USE the RAM (announcement / AddMemList is separate). Goal here: stop
+;   ALL spurious-region contention so the machine boots clean with the
+;   strap on, and the RAM decodes where it belongs.
+;
+; BOARD: game II - DIP-1 ON - DIP-2 ON - JPA1 2M. SIMMs: out for the
+;   clean-boot check, then in to look for $200000 (region 00100) access.
+; =====================================================================
+
+
+; ---- /_DRVEN (pin 23) : UNCHANGED working latched version -----------
+/DRVEN = /CFGIN & /BASEA & RST
+       + /CFGIN & /DRVEN & RST
+
+
+; ---- /_AC_PHASE (pin 16) : Hi-Z (unchanged) -------------------------
+ACPHASE.T = VCC
+ACPHASE.E = AB1 & /AB1
+
+
+; ---- DB15 (pin 18), DB13 (pin 20) : Hi-Z (natural 1 held by UA4) ----
+DB15.T = VCC
+DB15.E = AB1 & /AB1
+DB13.T = VCC
+DB13.E = AB1 & /AB1
+
+; ---- DB12 (pin 21) + DB14 (pin 19) : drive LOW while RESET asserted -
+; .T tautological-false -> data 0 -> pin LOW (active-high decl).
+; .E = /RST -> only while reset asserted; Hi-Z after (ROM/UA4 own the
+; line in normal ops; UA4 holds the captured 0 internally).
+DB12.T = AB1 & /AB1
+DB12.E = /RST
+DB14.T = AB1 & /AB1
+DB14.E = /RST
+
+
+; ---- NC15 (pin 15), NC22 (pin 22) : Hi-Z (unchanged) ----------------
+NC15.T = VCC
+NC15.E = AB1 & /AB1
+NC22.T = VCC
+NC22.E = AB1 & /AB1
+
+
+DESCRIPTION
+
+UA6 HD build + base-latch->(0,0,1) for RocHard RH800C 2M RAM bring-up.
+
+Same as ua6_hd.pld except DB12 (p21) and DB14 (p19) are driven LOW during
+reset, so UA4 captures o16=0 and o17=0 (DB13/o18 left natural = 1). Base
+latch (o16,o17,o18)=(0,0,1) arms ONLY UA4 /GALCLK1 line35 = the 2M
+$200000 window; disarms the $F8 (line37) and $C0-$DF (line36) terms that
+caused the red and yellow screens. Controller ID intact (ROM drives the
+$E8 read; 32.7R decouples). /_DRVEN unchanged -> HD unaffected.
+
+TEST (LA, roctec_ram_cfgd channel map):
+  1. RAM off: HD still boots (must).
+  2. RAM on, SIMMs out: does it boot CLEAN now (no red/yellow)? Does
+     /_RAMCE / /_GALSTROBE stop firing at $F8 AND $D8? CFGD12/14/13 = 0,0,1?
+  3. RAM on, SIMMs in bank0: any access at region 00100 ($200000)?

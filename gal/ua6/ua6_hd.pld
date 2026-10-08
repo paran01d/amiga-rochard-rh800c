@@ -1,0 +1,107 @@
+GAL22V10
+UA6RHHD
+
+AB1 AB2 AB3 AB4 AB5 AB6 GALSTB RCFG8 RCFG4 RCFG2 BASEA GND
+RW CFGIN NC15 ACPHASE RST DB15 DB14 DB13 DB12 NC22 DRVEN VCC
+
+; =====================================================================
+; UA6 - RocHard RH800C  -  HD-ONLY bring-up  (RAM DISABLED, no SIMMs)
+; ---------------------------------------------------------------------
+; *** REVISED per RH800C USER MANUAL (RocHard_RH800C.pdf) ***
+; The manual DOCUMENTS running the HDD with ZERO RAM (DIP-2 OFF, no
+; SIMMs, no strap). Therefore HD autoconfig must NOT depend on any RAM
+; strap. So /_DRVEN here is derived WITHOUT /_GALSTROBE (which is UA4's
+; strap-gated RAM-path signal). This corrects the earlier draft that
+; gated /_DRVEN on /_GALSTROBE and thus wrongly required RAM.
+;
+; Netlist-confirmed facts this build relies on:
+;   * /_E8WIN (UA4.23) can only go low when /_DRVEN (UA4.14) is low
+;     AND /_BANK_SEL is low. UA4 is a pure slave of /_DRVEN. So /_DRVEN
+;     is UA6's one autoconfig-critical output.
+;   * The autoconfig ID (er_Type = 0xC1: Zorro II, MEMLIST CLEAR) is
+;     served by the BOOT ROM (U6/U20) on /DB12-15. UA6 leaves DB12-15
+;     Hi-Z -> ROM supplies the controller identity -> no MEMLIST -> OS
+;     adds NO memory board -> no $200000 probe -> no fast-RAM hang.
+;   * Base/window decode = U9/U10/U11 + RN1/RN2 (original chips), NOT
+;     UA6. UA6 is not a base latch.
+;   * /_AC_PHASE (UA6.16 -> U11.5): U11's crack shows i5 unused, but a
+;     FLOATING U11.5 is dangerous; original black-box showed this pin
+;     driven LOW, so we match that. TUNABLE.
+;
+; BOARD SETTINGS for HD-only-no-RAM (per manual + UA4 equations):
+;   Game switch  = II   (grounds /_BANK_SEL -> lets /_E8WIN open)
+;   DIP-1 (HDD)  = ON   (firmware HDD-enable via /HDEN/U17)
+;   DIP-2 (RAM)  = OFF  (RAM disabled; no strap asserted - fine now)
+;   DIP-3        = per Kickstart version (OFF=1.3+, ON=1.2)
+;   SIMMs        = none required
+; =====================================================================
+
+
+; ---- /_DRVEN (pin 23) : master enable, LATCHED. STRAP-INDEPENDENT.
+; Keeps /_E8WIN STABLY low so U10 stays enabled and /_CFGADDR_MATCH
+; fires during the $E8 read. With the ORIGINAL U14 (correct polarity:
+; _ROMOE HIGH default, LOW on match), the match ENABLES the ROM during
+; the ID read -> U6 serves the ID + U11 selects the card + DTACKs.
+;   HISTORY: the earlier "_ROMOE high on match -> ROM starved" that made
+;   me add a write-gate was a CLONE U14 with INVERTED _ROMOE polarity
+;   (bad crack). Original U14 back in 2026-07-21 -> _ROMOE HIGH default,
+;   goes LOW on the match = ROM on during the config read. So the latch
+;   (U10 matching through the reads) is now CORRECT; the write-gate was
+;   compensating for the wrong chip.
+; NO /_GALSTROBE term (strap-free).
+/DRVEN = /CFGIN & /BASEA & RST
+       + /CFGIN & /DRVEN & RST
+
+
+; ---- /_AC_PHASE (pin 16) -> U11.5 : LEAVE UNDRIVEN (Hi-Z) -----------
+; IN-CIRCUIT 2026-07-21: driving this pin LOW RED-SCREENED the Amiga
+; (it was the only actively-driven UA6 output; /_DRVEN wasn't even
+; asserting). The clean-booting ua6_rebuild left this pin floating, so
+; revert to that: Hi-Z. (The original chip read out LOW here, but the
+; original is the suspected-broken part - matching it matched the fault.)
+ACPHASE.T = VCC
+ACPHASE.E = AB1 & /AB1
+
+
+; ---- DB12-15 (pins 18-21) : permanent Hi-Z --------------------------
+; Let the boot ROM (U6/U20) drive er_Type (0xC1 controller, MEMLIST
+; clear). .E forced false via a tautological contradiction.
+DB15.T = VCC
+DB15.E = AB1 & /AB1
+DB14.T = VCC
+DB14.E = AB1 & /AB1
+DB13.T = VCC
+DB13.E = AB1 & /AB1
+DB12.T = VCC
+DB12.E = AB1 & /AB1
+
+
+; ---- NC15 (pin 15), NC22 (pin 22) : unconnected pads, force Hi-Z -----
+NC15.T = VCC
+NC15.E = AB1 & /AB1
+NC22.T = VCC
+NC22.E = AB1 & /AB1
+
+
+DESCRIPTION
+
+UA6 HD-only bring-up for RocHard RH800C (RAM disabled).
+
+REVISED per the RH800C user manual, which documents HDD operation with
+zero RAM. /_DRVEN is derived independent of any RAM strap (NO /_GALSTROBE
+term). UA6's job reduces to: assert /_DRVEN so UA4 can pull /_E8WIN low
+(enabling U10's window compare and U11's DTACK), while leaving DB12-15
+Hi-Z so the boot ROM supplies the controller er_Type - RAM is never
+announced, so the OS never probes $200000.
+
+STILL A RECONSTRUCTION - open question: exactly how the $E8 autoconfig
+window is decoded without /_GALSTROBE (likely U10/U14/ROM-enable, not
+UA6). This /_DRVEN is a "card-enabled latch" first cut; the original's
+internal state pins (15/22) may sequence it more precisely.
+
+WATCH ON TEST (probe, in order):
+  1. /_BANK_SEL (UA4.20)   - LOW (game switch II).
+  2. /_DRVEN (UA6.23 / UA4.14) - goes LOW and stays low after first access.
+  3. /_E8WIN (UA4.23)      - should then drop and stay low; U10 enabled.
+Expected in DiagROM: ONE Zorro II board, mfr 2144, prod 1; NO memory
+board, no $200000 hang. Board set to: game II, DIP-1 ON, DIP-2 OFF.

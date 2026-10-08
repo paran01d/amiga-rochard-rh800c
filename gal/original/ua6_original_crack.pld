@@ -1,0 +1,73 @@
+GAL22V10
+UA6_crack
+
+
+AB1  AB2  AB3  AB4  AB5   AB6    STRB   CFG8M   CFG4M   CFG2M   BASEA  GND
+RW   CFGIN NC1  ACPHASE  RST    BIN3   BIN2    BIN1    BIN0    NC2    DRVEN  VCC
+
+
+; ============================================================
+;   UA6 GAL22V10 - Original crack from TL866-II black-box sweep
+; ============================================================
+;
+;   Method
+;   ------
+;   The original UA6 was placed in a TL866-II+ socket and swept
+;   through the full 2^14 = 16,384 input space via minipro's
+;   --logic_test (two-pass pull-up/pull-down measurement). Every
+;   observed output value was captured and cross-checked against
+;   every input pattern.
+;
+;   Result
+;   ------
+;   Pin 15 (NC1)     - driven LOW  for every input pattern
+;   Pin 16 (ACPHASE) - driven LOW  for every input pattern
+;   Pins 18-23       - Hi-Z (tri-stated) for every input pattern
+;
+;   That's it. UA6 is a two-signal pulldown driver.
+;
+;   Why a GAL for two constant lows?
+;   --------------------------------
+;   Almost certainly bus contention. A GAL output can sink ~24 mA;
+;   a resistor to GND is limited to whatever the pull-up on the
+;   opposing net can source. If NC1 or ACPHASE tap into a bus that
+;   also has a pull-up somewhere, the resistor route can't win.
+;   This is why Draft 11 (do-nothing / all Hi-Z) red-screened -
+;   the pull-up won by default and the card mis-behaved.
+;
+;   BIN0..BIN3, NC2, DRVEN
+;   ----------------------
+;   All permanently tri-stated. Autoconfig response bytes come
+;   from the ROM chain via the 32.7 ohm series resistors on
+;   DB12..DB15; UA6 was never the driver. DRVEN never touches
+;   UA4 pin 14 - UA4 pin 14 is pulled by something else.
+;
+; ============================================================
+
+
+; --- The two active outputs: both hard LOW ------------------
+; /output = VCC   means the "not the output" side is always TRUE,
+; which means the output itself is always FALSE (LOW).
+
+/NC1     = VCC
+/ACPHASE = VCC
+
+
+; --- The six unused outputs are left with no equation ------
+; A macrocell with no equation defaults to Hi-Z on the pin, which
+; is exactly what the original UA6 does.  BIN3..BIN0, NC2, DRVEN
+; get no equations here on purpose.
+
+
+DESCRIPTION
+
+UA6 GAL22V10 - original crack.
+
+Pin 15 (NC1)     : driven constant LOW
+Pin 16 (ACPHASE) : driven constant LOW
+Pins 18-23       : permanently Hi-Z
+
+Verified against a full 2^14 = 16,384-vector black-box sweep of
+the original chip on a TL866-II+ using minipro --logic_test with
+both pull-up and pull-down passes. Every input pattern produced
+the same output word.

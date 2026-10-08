@@ -1,0 +1,94 @@
+GAL22V10
+UA6RACP
+
+AB1 AB2 AB3 AB4 AB5 AB6 GALSTB RCFG8 RCFG4 RCFG2 BASEA GND
+RW CFGIN NC15 ACPHASE RST DB15 DB14 DB13 DB12 NC22 DRVEN VCC
+
+; =====================================================================
+; UA6 - RocHard RH800C  -  b001d base latch + DRIVE /_AC_PHASE LOW
+; ---------------------------------------------------------------------
+; IDENTICAL to ua6_hd_b001d.pld (stable: base latch (0,0,1), HD boots,
+; RAM window at $200000) EXCEPT /_AC_PHASE (pin 16) is now DRIVEN LOW
+; instead of Hi-Z.
+;
+; WHY (LA-proven 2026-08-05, rcotec_ram_latchclk.csv):
+;   The RAM SELECT chain is dead: /BASE_A, /BASE_B and /_UA3SEL NEVER
+;   assert (0 low samples in 12M) while /_LATCH_CLK toggles fine. Both
+;   U11 and U12 are ORIGINAL working chips, so the logic exists - an
+;   INPUT is blocking the state machine.
+;   Netlist: /_AC_PHASE is driven by EXACTLY ONE source = UA6 pin 16.
+;   Every ua6_hd clone left p16 Hi-Z -> U11 pin 5 (/_AC_PHASE) FLOATS
+;   HIGH (confirmed on LA: AC_PHASE high whole trace, /_LATCH_EN never
+;   asserts). U11's readable (HD-path) outputs don't use AC_PHASE -> HD
+;   works floating; but its two UNREADABLE outputs /_UA3SEL (o17) and
+;   /_LATCH_EN (o19) = exactly the two dead RAM-path signals. If o17/o19
+;   need /_AC_PHASE, floating it kills ONLY the RAM select. Matches all
+;   symptoms.
+;   Original UA6 black-box crack showed it drives p16 LOW -> low is at
+;   least the resting level U11's RAM path expects, and it is HD-safe
+;   (the original board runs HD with AC_PHASE low). Earlier "AC_PHASE
+;   low red-screened" was a PRE-base-latch build; retry now.
+;
+; DISCRIMINATOR:
+;   - RAM select starts working (/_UA3SEL asserts + DTACK) => U11 needed
+;     a LEVEL (low). Possible full fix.
+;   - Still hangs, /_UA3SEL still high => U11 needs a PHASE (pulse/edge);
+;     AC_PHASE must be DYNAMIC. Derive its timing (vs _AS/_GALSTROBE/
+;     _CDAC) from the capture and build the dynamic variant next.
+;
+; BOARD: game II - DIP-1 ON - DIP-2 ON - JPA1 2M.
+;   Test 1 (RAM off): HD must still boot (AC_PHASE low is HD-safe).
+;   Test 2 (RAM on, SIMMs in bank0): does /_UA3SEL assert at $200000?
+; =====================================================================
+
+
+; ---- /_DRVEN (pin 23) : UNCHANGED working latched version -----------
+/DRVEN = /CFGIN & /BASEA & RST
+       + /CFGIN & /DRVEN & RST
+
+
+; ---- /_AC_PHASE (pin 16) : DRIVE LOW (was Hi-Z) ---------------------
+; ACPHASE declared active-high (no slash). .T = tautological-false ->
+; output data = 0 -> pin LOW. .E = VCC -> always enabled (always driven).
+ACPHASE.T = AB1 & /AB1
+ACPHASE.E = VCC
+
+
+; ---- DB13 (pin 20) + DB12 (pin 21) : Hi-Z ---------------------------
+DB13.T = VCC
+DB13.E = AB1 & /AB1
+DB12.T = VCC
+DB12.E = AB1 & /AB1
+
+; ---- DB15 (pin 18) + DB14 (pin 19) : drive LOW while /_DRVEN off -----
+; DB15 -> o16 (UA4.16), DB14 -> o17 (UA4.17). .E = DRVEN (whole oe-off
+; window) so UA4 captures/holds o16=0, o17=0 -> base latch (0,0,1).
+DB15.T = AB1 & /AB1
+DB15.E = DRVEN
+DB14.T = AB1 & /AB1
+DB14.E = DRVEN
+
+
+; ---- NC15 (pin 15), NC22 (pin 22) : Hi-Z (unchanged) ----------------
+NC15.T = VCC
+NC15.E = AB1 & /AB1
+NC22.T = VCC
+NC22.E = AB1 & /AB1
+
+
+DESCRIPTION
+
+UA6 HD build + base-latch->(0,0,1) + /_AC_PHASE (pin16) DRIVEN LOW.
+
+Same as ua6_hd_b001d except pin 16 (/_AC_PHASE) is actively driven LOW
+instead of left Hi-Z. LA proved the RAM-select chain (/BASE_A, /BASE_B,
+/_UA3SEL) never asserts because /_AC_PHASE - the only qualifier U11's
+RAM-path outputs (o17/o19) get from UA6 - was floating high (UA6 clone
+never drove p16). Original UA6 drives p16 low (black-box crack) and it
+is HD-safe. This restores that level to test whether U11's RAM select
+needs a LEVEL (low) or a dynamic PHASE.
+
+TEST:
+  1. RAM off: HD still boots (must - AC_PHASE low matches original).
+  2. RAM on, SIMMs bank0: /_UA3SEL assert at $200000 write? DTACK back?
+     ATK memory test pass (or at least not instant-hang)?

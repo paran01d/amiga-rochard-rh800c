@@ -1,0 +1,67 @@
+diff --git a/JED-Converter/src/Galdurino.java b/JED-Converter/src/Galdurino.java
+index f471ff3..af3b783 100644
+--- a/JED-Converter/src/Galdurino.java
++++ b/JED-Converter/src/Galdurino.java
+@@ -446,27 +446,41 @@ public class Galdurino implements KeyListener, SerialPortEventListener {
+ 		SwingUtilities.invokeLater(new Runnable() {
+ 			@Override
+ 			public void run() {
+-				TextBereich.append(rx);
+-
+-				String text = TextBereich.getText();
+-
+-				if(text.endsWith("END\r\n")) {
+-					parseGAL();
+-				}
+-
+-				if(text.endsWith("V\r\n")) {
+-					parseVoltage();
+-				}
+-
+-				if(text.endsWith("ID end\r\n")) {
+-					parseID();
+-				}
+-
+-				if (TextBereich.getLineCount() > NumberOfLinesUntilTextCleared) {
+-					int lineEnd = text.indexOf("\r\n") + 1;
+-					text = text.substring(lineEnd);
+-					TextBereich.setText(text);
+-					TextBereich.setCaretPosition(TextBereich.getText().length());
++				try {
++					TextBereich.append(rx);
++
++					// Force the widget to paint immediately (Java 21 + some window managers
++					// don't schedule paints when the EDT is busy queuing more appends).
++					TextBereich.setCaretPosition(TextBereich.getDocument().getLength());
++					TextBereich.revalidate();
++					TextBereich.repaint();
++
++					String text = TextBereich.getText();
++
++					if(text.endsWith("END\r\n")) {
++						parseGAL();
++					}
++
++					if(text.endsWith("V\r\n")) {
++						parseVoltage();
++					}
++
++					if(text.endsWith("ID end\r\n")) {
++						parseID();
++					}
++
++					if (TextBereich.getLineCount() > NumberOfLinesUntilTextCleared) {
++						int lineEnd = text.indexOf("\r\n") + 1;
++						text = text.substring(lineEnd);
++						TextBereich.setText(text);
++						TextBereich.setCaretPosition(TextBereich.getText().length());
++					}
++				} catch (Exception e) {
++					// Swallow all exceptions - a NumberFormatException in parseVoltage()
++					// would otherwise silently kill this and all subsequent invokeLater
++					// Runnables' visible side effects.
++					System.err.println("outputText error: " + e);
++					e.printStackTrace();
+ 				}
+ 			}
+ 		});

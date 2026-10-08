@@ -1,0 +1,181 @@
+GAL22V10
+UA6RAM04
+
+AB1 AB2 AB3 AB4 AB5 AB6 GALSTB RCFG8 RCFG4 RCFG2 BASEA GND
+RW CFGIN NC15 ACPHASE RST DB15 DB14 DB13 DB12 NC22 DRVEN VCC
+
+; =====================================================================
+; UA6 - RocHard RH800C  -  TWO-BOARD AUTOCONFIG, rev 2
+; ---------------------------------------------------------------------
+; rev 1 (ua6_ram.pld, fuse 0x80D6) WORKED except for one thing: the base
+; latch captured the wrong value and the machine froze with a black screen.
+;
+; Measured in roctec_ac_crash2.csv (16 MSa/s, 62.5 ns/sample), the $48
+; base write:
+;     -0.00000038  AS=0 RW=0 GALSTB=0   CFGD=1,1,1  DB12=1   _AS falls
+;     -0.00000019  AS=0 RW=0            CFGD=1,1,1  DB12=0   data arriving
+;     -0.00000012  AS=0 RW=0            CFGD=0,0,1  DB12=0   <-- correct base
+;     -0.00000006  AS=0 RW=0            CFGD=1,1,1  DB12=0   <-- already gone
+;     +0.00000000  AS=1        E8WIN=0  CFGD=1,1,1           <-- rev 1 dropped here
+; The OS DID assign $200000 (D15-D12 = 0,0,1,0) but the value is on the
+; lines for ONE 62 ns sample. rev 1's `& /BASEA` qualifier put the drop
+; ~120 ns later, so UA4 latched (1,1,1) = /GALCLK1 line 37 = region
+; $E0-$FF including $F8 Kickstart -> contention on the next Kickstart
+; fetch -> hard freeze (trace goes static at +0.000004).
+;
+; ** THE FIX: stop trying to SAMPLE the CPU's write data. UA6 DRIVES the
+;    base itself during the base-write cycle, and drops /_DRVEN in that
+;    same cycle. The capture becomes deterministic instead of a 62 ns
+;    race. The value driven is the same one the OS writes for $200000. **
+;
+; Two changes from rev 1, nothing else:
+;   1. `& /BASEA` removed from the /_DRVEN drop term, so the drop happens
+;      at _AS-fall of the $48 write instead of ~120 ns later. DRVEN and
+;      the DB drivers then change on the SAME input event with the same
+;      propagation delay, so the lines are stable when UA4's latch closes
+;      (UA4 sees DRVEN low ~10 ns later; our drivers only turn off after
+;      UA4 deasserts /_GALSTROBE, another ~10 ns after that).
+;   2. The DB15-DB12 output enable no longer requires RW, and a BASEWR
+;      term drives DB15=0, DB14=0, DB13=1, DB12=0 during the base write.
+;
+; BASEWR = /GALSTB & /RW & AB6 & /AB5 & /AB4 & AB3
+;   covers $48, $4A and $4C (AB1 and AB2 don't care) so all three base /
+;   shut-up writes present the same value and none of them fight the CPU.
+;   The read terms all carry /AB6, so they are disjoint from BASEWR and
+;   the two never overlap.
+;
+; Everything else - the phase control, the RAM board identity, the
+; no-RAM-strap escape - is unchanged from rev 1. See ua6_ram.pld for the
+; full derivation from the UA4 and U14 cracks.
+;
+; RAM board identity (WinUAE rochard_sub[]: memory_mid 2144, memory_pid 2,
+; memory_after = false, so RAM is board 1 and chainedconfig is set):
+;   er_Type = $C0 zorroII | $20 MEMLIST | $08 CHAINED | size
+;             2M -> $EE     4M -> $EF     8M -> $E8
+;   er_Product 2   er_Flags 0   er_Manuf 2144   serial 0   diagvec 0
+;   nibbles: $00=E  $02=E/F/8 by strap  $06=D  $12=7  $14=9  rest=F
+;   offsets in AB6..AB1: $00=000000 $02=000001 $06=000011
+;                        $12=010001 $14=010010
+;
+; BOARD: game II - DIP-1 ON - DIP-2 ON - JPA1 2M, SIMM0/1 populated,
+;        UA3b = ua3b_rebuild8.jed (fuse 0xC824).
+; =====================================================================
+
+
+; ---- NC22 (pin 22) : "base write seen" LATCH -------------------------
+; ** rev 3: the phase latch moved here out of /_DRVEN. **
+; rev 2 never stuck: its set term contained /GALSTB, and DRVEN going low is
+; exactly what makes UA4 deassert /_GALSTROBE - so the term that caused the
+; drop destroyed itself ~30 ns later (UA6 -> UA4 -> UA6), and the only hold
+; left was `/CFGIN & /DRVEN & RST`, which also depends on /CFGIN staying
+; asserted. Measured result: /_DRVEN went HIGH at reset and NEVER dropped
+; again - _E8WIN stuck high across a warm reset, only changing on a power
+; cycle - so the ROM never came back and the HD board never enumerated.
+;
+; NC22 is an unconnected pad, so its feedback is internal and unloaded, and
+; its HOLD term depends on NOTHING except RST. The set term still contains
+; /GALSTB, but NC22 latches within one feedback delay (~10 ns) while GALSTB
+; needs a full UA6->UA4->UA6 round trip (~30 ns) to go away, so it has
+; ~3x the margin it needs - and unlike rev 2 the thing being set is not the
+; thing that kills the set condition.
+/NC22.T = /GALSTB & /RW & AB6 & /AB5 & /AB4 & AB3 & /AB1 & RST
+        + /NC22 & RST
+NC22.E  = VCC
+
+
+; ---- /_DRVEN (pin 23) : phase control ---------------------------------
+; HIGH = RAM-board phase (ROM off, UA4 base latch transparent).
+; LOW  = normal operation / HD-board phase (ROM on, window decoding).
+; Now simply follows the NC22 latch - no external dependency in the hold
+; path at all, so nothing can make it pop back up except reset.
+; Term 2 is the no-RAM-strap escape: with DIP-2 off UA4 never asserts
+; /_GALSTROBE at $E8, NC22 could never set, and the HD board would never
+; enumerate - so drop immediately and behave exactly like ua6_hd_b001d.
+; ** rev 4: SELF-HOLD RESTORED. **
+; rev 3 dropped `/CFGIN & /DRVEN & RST` when the latch moved to NC22. That
+; broke the NO-RAM path, whose only term is gated on /BASEA - and BASE_A is
+; DYNAMIC (U12 o12, registered off /_LATCH_CLK <- _AS). Without a hold,
+; /_DRVEN followed BASE_A cycle by cycle: measured in
+; roctec_ac_noram_boot_fail.csv as _E8WIN toggling 108553 times against
+; 108552 _AS transitions - one per bus cycle - so the ROM enable chattered
+; and the HD would not boot with DIP-2 OFF.
+; The hold is deliberately NOT gated on /CFGIN (that was rev 2's other
+; weakness); once either path has fired, only reset clears it.
+/DRVEN.T = /NC22 & RST
+         + /DRVEN & RST
+         + /CFGIN & /BASEA & RST & RCFG2 & RCFG4 & RCFG8
+DRVEN.E  = VCC
+
+
+; ---- DB15-DB12 (pins 18-21) -------------------------------------------
+; Enabled for every $E8 cycle of the RAM phase, read OR write:
+;   /CFGIN  - enabled in the autoconfig chain
+;   /GALSTB - UA4 says this is an $E8 cycle with a RAM strap fitted
+;   DRVEN   - still in the RAM phase.  ESSENTIAL: after DRVEN drops,
+;             /_GALSTROBE also fires for ordinary $200000 RAM accesses
+;             (UA4 o21 terms 1/2/6) and we must not drive the data bus.
+; ** rev 2: RW removed from the enable, so we also drive during the base
+;    write - that is what makes the latch capture deterministic. **
+; Default is HIGH ($F); each term pulls one bit LOW.
+
+; DB15: low at $12 (er_Manuf hi $F7 -> nibble 7), and low for the base.
+/DB15.T = /AB6 & /AB5 & AB4 & /AB3 & /AB2 & AB1
+        + /GALSTB & /RW & AB6 & /AB5 & /AB4 & AB3
+DB15.E  = /CFGIN & /GALSTB & DRVEN
+
+; DB14: low at $02 with the 8M strap (nibble 8), at $14 (9), and for the base.
+/DB14.T = /AB6 & /AB5 & /AB4 & /AB3 & /AB2 & AB1 & /RCFG8
+        + /AB6 & /AB5 & AB4 & /AB3 & AB2 & /AB1
+        + /GALSTB & /RW & AB6 & /AB5 & /AB4 & AB3
+DB14.E  = /CFGIN & /GALSTB & DRVEN
+
+; DB13: low at $02 (8M), $06 (er_Product 2 -> $FD, nibble D) and $14 (9).
+; NO base term - DB13 must be HIGH for A21=1, i.e. base $200000 = (0,0,1).
+/DB13.T = /AB6 & /AB5 & /AB4 & /AB3 & /AB2 & AB1 & /RCFG8
+        + /AB6 & /AB5 & /AB4 & /AB3 & AB2 & AB1
+        + /AB6 & /AB5 & AB4 & /AB3 & AB2 & /AB1
+DB13.E  = /CFGIN & /GALSTB & DRVEN
+
+; DB12: low at $00 (er_Type high nibble E), at $02 for 2M ($E) and 8M ($8),
+; and low for the base (A20 = 0).  4M is $F, so no term there.
+; DB12 is not one of UA4's latch bits; the base term is only there to stop
+; us fighting the CPU, which drives D12 = 0 for $200000.
+/DB12.T = /AB6 & /AB5 & /AB4 & /AB3 & /AB2 & /AB1
+        + /AB6 & /AB5 & /AB4 & /AB3 & /AB2 & AB1 & /RCFG2
+        + /AB6 & /AB5 & /AB4 & /AB3 & /AB2 & AB1 & /RCFG8
+        + /GALSTB & /RW & AB6 & /AB5 & /AB4 & AB3
+DB12.E  = /CFGIN & /GALSTB & DRVEN
+
+
+; ---- /_AC_PHASE (pin 16) : Hi-Z ---------------------------------------
+; Measured inert (capture #3: constant, 0 transitions all boot).
+ACPHASE.T = VCC
+ACPHASE.E = AB1 & /AB1
+
+
+; ---- NC15 (pin 15) : unconnected pad, left Hi-Z ------------------------
+NC15.T = VCC
+NC15.E = AB1 & /AB1
+
+
+DESCRIPTION
+
+UA6 two-board autoconfig rev 2 - deterministic base capture.
+
+rev 1 presented the RAM board correctly (386 config cycles, right nibbles,
+ROM silenced, DTACK returning) but latched the base from the bus and lost
+the race: the correct value (0,0,1) is on DB15/14/13 for a single 62 ns
+sample and rev 1's /BASEA-delayed drop caught (1,1,1) instead, pointing
+the window at $F8 Kickstart and freezing the machine.
+
+rev 2 drives the base itself. During any base/shut-up write ($48/$4A/$4C)
+UA6 holds DB15=0, DB14=0, DB13=1, DB12=0 and drops /_DRVEN in that same
+cycle, so UA4 latches (0,0,1) = the $200000 window with no timing race.
+
+TEST
+  1. DIP-2 OFF: HD must still autoboot (unchanged from rev 1, which passed).
+  2. DIP-2 ON, JPA1 2M, SIMMs in bank 0: same capture as crash2
+     (trigger _E8WIN falling, -0.02 s .. +0.05 s).  CFGD15/14/13 must read
+     0,0,1 after the drop, and the trace must NOT go static.
+  3. Then expect the HD board to enumerate second and the machine to boot,
+     with 2 MB Fast in the Kickstart memory scan.

@@ -1,0 +1,71 @@
+GAL22V10
+UA6Repl
+
+
+AB1  AB2  AB3  AB4  AB5   AB6    STRB   CFG8M   CFG4M   CFG2M   BASEA  GND
+RW   CFGIN NC1  ACPHASE  RST    BIN3   BIN2    BIN1    BIN0    NC2    DRVEN  VCC
+
+
+; ============================================================
+;   UA6 GAL22V10 - Draft 11 (do-nothing control experiment)
+; ============================================================
+;
+;   VCD analysis (ua6_next.vcd power-on trace) showed that
+;   Draft 10 causes UA4 to power up with /_GALCLK1 and
+;   /_GALSTROBE ALREADY ASSERTED at #0. This propagates through
+;   U14 (o19.oe = /i1) to assert /_OVR, which disables Amiga's
+;   default DTACK path. With UA6 removed, UA4 powers up with
+;   those outputs HIGH — clean boot.
+;
+;   The suspected cause: Draft 10's DRVEN equation can glitch
+;   LOW during power-up because BASEA, /CFGIN, RW are all
+;   undefined initially. Any brief coincident LOW state fires
+;   DRVEN → UA4 pin 14 LOW → /_GALCLK1 self-latches asserted.
+;
+;   Draft 11 is a CONTROL EXPERIMENT: force every output Hi-Z
+;   via tautological contradiction. UA6 becomes electrically
+;   invisible except for its input capacitance. Should boot
+;   identically to UA6-removed. If not → the chip's mere
+;   presence (input capacitance loading) is the problem.
+;
+;   Once Draft 11 is confirmed as a clean baseline, Draft 12
+;   will re-add DRVEN and ACPHASE with proper /_RST gating so
+;   nothing drives until reset releases and inputs are stable.
+;
+; ============================================================
+
+
+; --- ALL outputs forced Hi-Z (tautological contradiction on .E) ---
+
+BIN0.T = VCC
+BIN0.E = AB1 * /AB1
+
+BIN1.T = VCC
+BIN1.E = AB1 * /AB1
+
+BIN2.T = VCC
+BIN2.E = AB1 * /AB1
+
+BIN3.T = VCC
+BIN3.E = AB1 * /AB1
+
+ACPHASE.T = VCC
+ACPHASE.E = AB1 * /AB1
+
+DRVEN.T = VCC
+DRVEN.E = AB1 * /AB1
+
+NC1.T = VCC
+NC1.E = AB1 * /AB1
+
+NC2.T = VCC
+NC2.E = AB1 * /AB1
+
+
+DESCRIPTION
+
+UA6 GAL22V10 Draft 11 - do-nothing control experiment. Every
+output forced Hi-Z. Should behave identically to UA6 removed.
+Used to prove whether the chip's mere presence in the socket
+is enough to break things, or whether it's specifically our
+output drive that's the issue.

@@ -1,0 +1,44 @@
+Inputs:
+
+2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18, 19
+
+Outputs:
+
+12 (Combinatorial, Output feedback output, Active low)
+13 (Combinatorial, Output feedback output, Active low)
+14 (Combinatorial, Output feedback output, Active low)
+15 (Combinatorial, Output feedback output, Active high)
+16 (Combinatorial, Output feedback output, Active high)
+17 (Combinatorial, Output feedback output, Active low)
+18 (Combinatorial, Output feedback output, Active high)
+19 (Registered, Output feedback registered, Active high)
+
+Equations:
+
+/o12 = /i2 & /i5 & i7 & /rf19 +
+       /i2 & /i6 & i7 & /rf19
+o12.oe = vcc
+
+/o13 = /i2 & /i5 & /i7 & /rf19 +
+       /i2 & /i6 & /i7 & /rf19
+o13.oe = vcc
+
+/o14 = /i2 & i4 & /i6 & /rf19 +
+       /i2 & i4 & /i5 & /rf19
+o14.oe = vcc
+
+o15 = /i7
+o15.oe = vcc
+
+o16 = /i8
+o16.oe = vcc
+
+/o17 = /i8
+o17.oe = vcc
+
+o18 = o12 & o13
+o18.oe = vcc
+
+rf19 := i3
+rf19.oe = OE
+

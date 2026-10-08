@@ -1,0 +1,76 @@
+GAL22V10
+BERRWDOG
+
+CDAC AS DTACK AB21 AB22 AB23 NC7 NC8 NC9 NC10 NC11 GND
+NC13 Q0 Q1 Q2 Q3 Q4 Q5 Q6 Q7 NC22 BERR VCC
+
+; =====================================================================
+; BERR watchdog for RocHard $200000 RAM diagnostics
+; ---------------------------------------------------------------------
+; A no-DTACK access to the card's RAM window hangs the 68000 forever
+; (stock A500 has no bus-error timeout for this space). This GAL asserts
+; /BERR (68000 pin 22 / expansion pin 46) if _DTACK does not arrive
+; within ~8 CDAC cycles (~2.2us) of an _AS-active access INSIDE the
+; $200000-$3FFFFF window. The CPU then takes a bus-error exception
+; instead of hanging, so a memtest can log the faulting address and
+; continue.
+;
+; WINDOW-GATED: only arms for AB23=0,AB22=0,AB21=1 ($200000-$3FFFFF),
+; so it never false-triggers on chip RAM / Kickstart / CIA cycles.
+;
+; enable = in-window & _AS asserted & _DTACK not-yet-asserted
+;        = AB21 & /AB22 & /AB23 & /AS & DTACK
+;   (AS,DTACK are active-low: /AS = asserted, DTACK = not-acked/high.
+;    ABx probed at U10 outputs = active-high: AB21=1 at $200000.)
+;
+; 8-stage shift register clocked by CDAC. When enable drops (DTACK
+; arrives or cycle ends or address leaves window) the whole chain
+; clears in one clock (each stage ANDs enable). Q7 => timeout => BERR.
+;
+; /BERR is DRIVEN LOW only during timeout, Hi-Z otherwise (wire-OR with
+; the 68000's pull-up and any other BERR source).
+;
+; WIRING:
+;   pin1  CDAC   <- J1.15
+;   pin2  AS     <- J1.74 (_AS)
+;   pin3  DTACK  <- J1.66 (_DTACK)
+;   pin4  AB21   <- U10.13
+;   pin5  AB22   <- U10.15
+;   pin6  AB23   <- U10.17
+;   pin23 BERR   -> expansion slot pin 46 (68000 /BERR)
+;   pin12 GND, pin24 VCC
+;
+; TUNING: timeout = 8 CDAC (~2.2us) >> a valid RAM DTACK (~0.4us). If
+; legit slow cycles false-trigger, add stages / slow the clock; if you
+; want faster recovery, tap BERR off an earlier Qn.
+; =====================================================================
+
+
+; ---- 8-stage timeout shift register (registered, clk = CDAC) --------
+Q0.R = AB21 & /AB22 & /AB23 & /AS & DTACK
+Q1.R = /Q0 & AB21 & /AB22 & /AB23 & /AS & DTACK
+Q2.R = /Q1 & AB21 & /AB22 & /AB23 & /AS & DTACK
+Q3.R = /Q2 & AB21 & /AB22 & /AB23 & /AS & DTACK
+Q4.R = /Q3 & AB21 & /AB22 & /AB23 & /AS & DTACK
+Q5.R = /Q4 & AB21 & /AB22 & /AB23 & /AS & DTACK
+Q6.R = /Q5 & AB21 & /AB22 & /AB23 & /AS & DTACK
+Q7.R = /Q6 & AB21 & /AB22 & /AB23 & /AS & DTACK
+
+
+; ---- /BERR (pin 23): drive LOW during timeout, else Hi-Z ------------
+; BERR declared active-high (no slash). .T tautological-false -> data 0
+; -> pin LOW when enabled. .E = Q7 -> only driven during timeout.
+BERR.T = AS & /AS
+BERR.E = /Q7
+
+
+DESCRIPTION
+
+BERR timeout watchdog for RocHard $200000 RAM diagnostics.
+
+Asserts /BERR (expansion pin 46) if _DTACK is absent for ~8 CDAC cycles
+during an _AS access in the $200000-$3FFFFF window, converting the
+otherwise-fatal no-DTACK hang into a 68000 bus-error exception so a
+memtest can log the faulting address and continue. Window-gated (never
+fires outside the card RAM space); /BERR driven low only during timeout,
+Hi-Z otherwise.

@@ -1,0 +1,100 @@
+GAL22V10
+UA6RHWR
+
+AB1 AB2 AB3 AB4 AB5 AB6 GALSTB RCFG8 RCFG4 RCFG2 BASEA GND
+RW CFGIN NC15 ACPHASE RST DB15 DB14 DB13 DB12 NC22 DRVEN VCC
+
+; =====================================================================
+; UA6 - RocHard RH800C  -  ua6_hd + WRITE-RELEASE /_DRVEN  (RAM bring-up)
+; ---------------------------------------------------------------------
+; IDENTICAL to ua6_hd.pld EXCEPT the /_DRVEN equation.
+;
+; WHY (LA-confirmed 2026-08-01, roctec_ram_cfgd_trace.csv):
+;   With the RAM strap set, the card RED-SCREENS because /_RAMCE (U11.22,
+;   = U2 data-buffer enable) fires at $F8xxxx (motherboard Kickstart ROM)
+;   -> U2 fights the Kickstart ROM on D8-15 -> corrupt fetch -> red.
+;   Mechanism (chained cracked fusemaps):
+;     /_RAMCE (U11 o22) = /BASE_B & _UDS & not-RST         (no A20 term!)
+;     /BASE_B (U12 o18) = /_LATCH_EN & /_GALSTROBE
+;     /_GALSTROBE (UA4 o21) strap terms ride on /GALCLK1 (UA4 o19), which
+;       decodes region by A21..A23 + straps + the latched base o16/o17/o18
+;       and NEVER checks A16-A20 -> can't tell $E8 from $F8.
+;   Its one region-7 term (line 37) needs o16 & o17 & o18 = 1,1,1.
+;   LA proved: at the $F8 fire, o16.o17.o18 (CFGD12/14/13) = 1,1,1.
+;
+; ROOT CAUSE: o16/o17/o18 are UA4 SELF-HOLDING latches (o=o), oe=/_DRVEN.
+;   ua6_hd pins /_DRVEN LOW forever -> UA4's oe never releases -> the
+;   latches never CAPTURE a defined base, they settle to 111 and hold ->
+;   the region-7 term stays armed for all of $E0-$FF incl $F8.
+;
+; THE FIX UNDER TEST: release /_DRVEN during WRITES (add & RW). During the
+;   autoconfig base WRITE (R/W=0) the card needn't drive data, so /_DRVEN
+;   can go high, UA4 releases o16/o17/o18, the written base (which has a 0
+;   bit) reaches /_CFGDxx via the 32.7R resistors, and the next read
+;   re-asserts /_DRVEN latching a non-111 base -> region-7 term disarmed
+;   -> no $F8 fire.  BLUNT first cut: this releases on EVERY write (incl
+;   IDE) -> may need narrowing to config offset $48 via AB1-6 if it
+;   destabilises. VERIFY on the LA: CFGD12/14/13 should stop reading 111,
+;   and /_RAMCE must NOT fire at region 1111 ($F8).  Also confirm the HD
+;   still ENUMERATES (DiagROM shows the Z2 board) - reburn ua6_hd if not.
+;
+; BOARD SETTINGS (RAM bring-up): game II - DIP-1 ON - DIP-2 ON -
+;   JPA1 = 2M - SIMM0+SIMM1 (bank 0) fitted, or empty for a pure
+;   logic-contention re-check.
+; =====================================================================
+
+
+; ---- /_DRVEN (pin 23) : latched, but RELEASES ON WRITES -------------
+; ua6_hd was: /DRVEN = /CFGIN & /BASEA & RST + /CFGIN & /DRVEN & RST
+; Add & RW to both terms so /_DRVEN deasserts (high) on any write,
+; letting UA4 capture the autoconfig base into o16/o17/o18.
+/DRVEN = /CFGIN & /BASEA & RW & RST
+       + /CFGIN & /DRVEN & RW & RST
+
+
+; ---- /_AC_PHASE (pin 16) -> U11.5 : LEAVE UNDRIVEN (Hi-Z) -----------
+; Unchanged from ua6_hd. Driving it LOW red-screened during HD bring-up;
+; LA later proved static levels here don't affect the RAM fault. Hi-Z.
+ACPHASE.T = VCC
+ACPHASE.E = AB1 & /AB1
+
+
+; ---- DB12-15 (pins 18-21) : permanent Hi-Z (unchanged) --------------
+; Let the boot ROM (U6/U20) drive the controller er_Type. UA6 does NOT
+; announce RAM here - RAM usability is handled separately (AddMemList).
+DB15.T = VCC
+DB15.E = AB1 & /AB1
+DB14.T = VCC
+DB14.E = AB1 & /AB1
+DB13.T = VCC
+DB13.E = AB1 & /AB1
+DB12.T = VCC
+DB12.E = AB1 & /AB1
+
+
+; ---- NC15 (pin 15), NC22 (pin 22) : unconnected pads, Hi-Z ----------
+NC15.T = VCC
+NC15.E = AB1 & /AB1
+NC22.T = VCC
+NC22.E = AB1 & /AB1
+
+
+DESCRIPTION
+
+UA6 HD-bring-up clone with WRITE-RELEASE /_DRVEN for RocHard RH800C.
+
+Identical to ua6_hd.pld except /_DRVEN gains an "& RW" gate on both its
+set and hold terms, so it deasserts on writes. Purpose: let UA4 capture a
+defined (non-all-1s) autoconfig base into its o16/o17/o18 latches during
+the base write, so UA4's /GALCLK1 region-7 term (line 37, needs
+o16.o17.o18=111) stops arming and /_GALSTROBE / /_RAMCE no longer fire at
+$F8xxxx (Kickstart), which was the strap-on red-screen.
+
+FIRST TEST BURN - blunt (releases on all writes). If it destabilises
+(oscillation on /_DRVEN<->/_E8WIN, or HD stops enumerating), narrow the
+release to config offset 0x48 using AB1-6, or revert to ua6_hd.
+
+TEST (LA, channel map as roctec_ram_cfgd_trace):
+  1. HD still enumerates? (DiagROM one Z2 board, mfr 2144).
+  2. Strap ON: does CFGD12/14/13 stop reading 111?
+  3. Strap ON: does /_RAMCE STILL fire at region 1111 ($F8)?  It must NOT.
