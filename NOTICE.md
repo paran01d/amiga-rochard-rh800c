@@ -1,4 +1,13 @@
-# Notice: third-party material
+# Notice: licences and third-party material
+
+## Which licence covers what
+- **MIT** ([LICENSE](LICENSE)): every program, script and firmware source
+  (`*.py`, `*.s`, `*.sh`, `*.ino`, Makefiles) and the GAL logic designs we wrote
+  (`gal/ua6`, `gal/ua3b`, `gal/ua4`, `gal/misc`).
+- **CC BY 4.0** ([LICENSE-docs](LICENSE-docs)): documentation (READMEs, `docs/`),
+  the KiCad schematics, the 3D models and drawings (`mechanical/`), and the
+  measurement data (`captures/`, `tl866-probe/*.csv`).
+- Neither licence covers the material listed below.
 
 ## Included, not ours
 - **`gal/original/`** contains fuse dumps, JEDEC files and decoded equations

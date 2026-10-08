@@ -2,13 +2,6 @@ MIT License
 
 Copyright (c) 2026 paran01d and contributors
 
-This licence covers the SOFTWARE and LOGIC SOURCES in this repository: every
-program, script and firmware source (*.py, *.s, *.sh, *.ino, Makefile), and
-the GAL logic designs we wrote (gal/ua6, gal/ua3b, gal/ua4, gal/misc).
-Documentation, the schematic and the 3D models are licensed separately under
-CC BY 4.0 - see LICENSE-docs. Material NOT covered by either licence is listed
-in NOTICE.md.
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
